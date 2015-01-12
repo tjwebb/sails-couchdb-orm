@@ -29,6 +29,7 @@ var adapter = exports;
 // If true, the schema for models using this adapter will be automatically synced when the server starts.
 // Not terribly relevant if your data store is not SQL/schemaful.
 adapter.syncable = false;
+adapter.pkFormat = 'string';
 
 
 // Reserved attributes.
@@ -48,13 +49,9 @@ adapter.defaults = {
   password: null,
 
   schema: true,
-  syncable: false,
-  autoPK: false,
-  pkFormat: 'string',
+  autoPK: true,
 
   maxMergeAttempts: 5,
-
-
 
   // If setting syncable, you should consider the migrate option,
   // which allows you to set how the sync will be performed.
@@ -227,7 +224,6 @@ function find(connectionName, collectionName, criteria, cb, round) {
   // If you need to access your private data for this collection:
   var db = registry.db(collectionName);
 
-  console.log('GETTING DB FOR "%s"."%s"', connectionName, collectionName);
   // console.log('got: ',db);
   if (!db) {
     return cb((function buildError(){
@@ -255,7 +251,7 @@ function find(connectionName, collectionName, criteria, cb, round) {
   // Handle case where no criteria is specified at all
   // (list all documents in the couch collection)
   if (queriedAttributes.length === 0) {
-    console.log('Queried Attributes" (aka criteria\'s WHERE clause) doesn\'t contain any values-- listing everything!');
+    //console.log('Queried Attributes" (aka criteria\'s WHERE clause) doesn\'t contain any values-- listing everything!');
 
     // All docs
     dbOptions.include_docs = true;
@@ -378,7 +374,7 @@ adapter.create = function create(connectionName, collectionName, values, cb) {
 adapter.update = function update(connectionName, collectionName, options, values, cb) {
   collectionName = sanitizeCollectionName(collectionName);
 
-  var searchAttributes = Object.keys(options.where);
+  var searchAttributes = Object.keys(options.where || { });
   if (searchAttributes.length != 1)
     return cb(new Error('only support updating one object by id'));
   if (searchAttributes[0] != 'id')
@@ -421,12 +417,17 @@ adapter.destroy = function destroy(connectionName, collectionName, options, cb) 
   var db = registry.db(collectionName);
 
   // Find the record
-  adapter.find(connectionName,collectionName,options, function(err,docs) {
-    async.each(docs,function(item) { // Shoud have only one.
-      db.destroy(item.id, item.rev, function(err, doc) {
-        cb(err,[item]); // Waterline expects an array as result.
-      });
-    });
+  adapter.find(connectionName,collectionName, options, function (err,docs) {
+    async.map(docs,
+      function (item, next) {
+        db.destroy(item.id, item.rev, function(err, doc) {
+          next(err, item);
+        });
+      },
+      function (err, results) {
+        cb(err, results || [ ]);
+      }
+    );
   });
 };
 
